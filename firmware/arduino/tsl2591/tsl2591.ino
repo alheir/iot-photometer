@@ -92,27 +92,37 @@ void configureSensor(void)
 /**************************************************************************/
 void setup(void) 
 {
-  Serial.begin(115200);
-  
-  Serial.println(F("Starting Adafruit TSL2591 Test!"));
-  
-  if (tsl.begin()) 
-  {
-    Serial.println(F("Found a TSL2591 sensor"));
-  } 
-  else 
-  {
-    Serial.println(F("No sensor found ... check your wiring?"));
-    while (1);
-  }
-    
-  /* Display some basic information on this sensor */
-  displaySensorDetails();
-  
-  /* Configure the sensor */
-  configureSensor();
+    Serial.begin(115200);
+    delay(1000);
 
-  // Now we're ready to get readings ... move on to loop()!
+    Serial.println(F("Starting Adafruit TSL2591 Test!"));
+
+    Wire.begin();
+
+    // waiting for TSL2591 to respond
+    Serial.print(F("Waiting TSL2591"));
+#ifdef LED_BUILTIN
+    pinMode(LED_BUILTIN, OUTPUT);
+#endif
+    while (!tsl.begin()) {
+        Serial.print(F("."));
+#ifdef LED_BUILTIN
+        digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+#endif
+        delay(500);
+    }
+#ifdef LED_BUILTIN
+    digitalWrite(LED_BUILTIN, LOW);
+#endif
+    Serial.println(F("\nTSL2591 detected"));
+
+    /* Display some basic information on this sensor */
+    displaySensorDetails();
+
+    /* Configure the sensor */
+    configureSensor();
+
+    // Now we're ready to get readings ... move on to loop()!
 }
 
 /**************************************************************************/
