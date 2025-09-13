@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IoT Photometer - Real-Time Luminance</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>IoT Photometer - Real-Time Luminance</h1>
+    <p>Current Lux: <span id="luxValue">Loading...</span></p>
+    <p>Last Updated: <span id="timestamp">N/A</span></p>
+    <h2>ESP8266 Logs</h2>
+    <div id="logsContainer" style="max-height: 300px; overflow-y: auto; background: #eee; padding: 10px; text-align: left;">
+        <p>Loading logs...</p>
+    </div>
+    <script src="config.js"></script>
+    <!-- Use compat builds so firebase.initializeApp / firebase.database() work -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>
