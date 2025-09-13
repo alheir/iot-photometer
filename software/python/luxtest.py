@@ -35,7 +35,7 @@ def list_ports():
 		desc = f"{port.device}: {port.description} (Fabricante: {port.manufacturer or 'Desconocido'})"
 		print(f"  - {desc}")
 
-def run_test(Nmeas: int, port: str = None):
+def run_test(Nmeas: int, port: str = None, fullscreen: bool = False):
 	input_levels = np.linspace(0.0, 1.0, 11)  # 0:0.1:1
 	luxmed: List[float] = []
 
@@ -44,7 +44,7 @@ def run_test(Nmeas: int, port: str = None):
 	for i, level in enumerate(input_levels, start=1):
 		# Cerrar ventanas anteriores y mostrar patch gris
 		plt.close("all")
-		generate_gray(level)
+		generate_gray(level, fullscreen=fullscreen)  # Pass fullscreen argument
 		time.sleep(1.0)  # espera a que la ventana esté visible
 
 		# Medir N veces y promediar
@@ -56,6 +56,8 @@ def run_test(Nmeas: int, port: str = None):
 
 		perc = int(i * 100 / total)
 		print(f"{perc}% Done")
+	
+	plt.close("all") # Cerrar la ventana de gris al final
 
 	# Normalizar y ajustar
 	luxmed = np.array(luxmed, dtype=float)
@@ -87,18 +89,19 @@ def main():
 	parser = argparse.ArgumentParser(
 		description="Medición de gamma con fotómetro por puerto serie. "
 					"Genera niveles de gris en pantalla, mide luminancia y ajusta una curva de potencia para calcular gamma.",
-		epilog="Ejemplo: python luxtest.py --port COM3 --nmeas 5"
+		epilog="Ejemplo: python luxtest.py --port COM3 --nmeas 5 --fullscreen"
 	)
 	parser.add_argument("--nmeas", type=int, default=2, help="Número de mediciones por nivel (default: 2)")
 	parser.add_argument("--port", type=str, default=None, help="Puerto serie (p.ej. COM3 o /dev/ttyUSB0). Si no se especifica, se intenta detectar automáticamente.")
 	parser.add_argument("--list-ports", action="store_true", help="Lista los puertos serie disponibles y sale")
+	parser.add_argument("--fullscreen", action="store_true", help="Habilita modo fullscreen para las ventanas de gris")
 	args = parser.parse_args()
 	
 	if args.list_ports:
 		list_ports()
 		return
 	
-	run_test(Nmeas=args.nmeas, port=args.port)
+	run_test(Nmeas=args.nmeas, port=args.port, fullscreen=args.fullscreen)
 
 if __name__ == "__main__":
 	main()
