@@ -4,6 +4,7 @@ from typing import List
 
 import numpy as np
 import matplotlib.pyplot as plt
+import serial.tools.list_ports
 
 from generate_gray import generate_gray
 from luxmeter import luxmeter
@@ -22,6 +23,17 @@ def fit_power_law(x: np.ndarray, y: np.ndarray):
 	a = float(np.exp(intercept))
 	b = float(slope)
 	return a, b
+
+def list_ports():
+	"""Lista los puertos serie disponibles con descripciones breves."""
+	ports = serial.tools.list_ports.comports()
+	if not ports:
+		print("No se encontraron puertos serie disponibles.")
+		return
+	print("Puertos serie disponibles:")
+	for port in ports:
+		desc = f"{port.device}: {port.description} (Fabricante: {port.manufacturer or 'Desconocido'})"
+		print(f"  - {desc}")
 
 def run_test(Nmeas: int, port: str = None):
 	input_levels = np.linspace(0.0, 1.0, 11)  # 0:0.1:1
@@ -58,7 +70,9 @@ def run_test(Nmeas: int, port: str = None):
 	plt.figure()
 	plt.scatter(input_levels, lux_norm, label="Datos", color="C0")
 	xx = np.linspace(0.0, 1.0, 200)
-	yy = np.where(xx > 0, a * (xx ** gamma), 0.0)
+	yy = np.zeros_like(xx)
+	mask = xx > 0.0 # Evitar evaluar 0**gamma (puede dar divide-by-zero si gamma<0)
+	yy[mask] = a * np.power(xx[mask], gamma)
 	plt.plot(xx, yy, label=f"Ajuste: y = {a:.3g}·x^{gamma:.2f}", color="C1")
 	plt.ylim(-0.05, 1.05)
 	plt.xlim(-0.02, 1.02)
@@ -70,10 +84,20 @@ def run_test(Nmeas: int, port: str = None):
 	plt.show()
 
 def main():
-	parser = argparse.ArgumentParser(description="Medición de gamma con fotómetro por puerto serie.")
+	parser = argparse.ArgumentParser(
+		description="Medición de gamma con fotómetro por puerto serie. "
+					"Genera niveles de gris en pantalla, mide luminancia y ajusta una curva de potencia para calcular gamma.",
+		epilog="Ejemplo: python luxtest.py --port COM3 --nmeas 5"
+	)
 	parser.add_argument("--nmeas", type=int, default=2, help="Número de mediciones por nivel (default: 2)")
-	parser.add_argument("--port", type=str, default=None, help="Puerto serie (p.ej. COM3 o /dev/ttyUSB0)")
+	parser.add_argument("--port", type=str, default=None, help="Puerto serie (p.ej. COM3 o /dev/ttyUSB0). Si no se especifica, se intenta detectar automáticamente.")
+	parser.add_argument("--list-ports", action="store_true", help="Lista los puertos serie disponibles y sale")
 	args = parser.parse_args()
+	
+	if args.list_ports:
+		list_ports()
+		return
+	
 	run_test(Nmeas=args.nmeas, port=args.port)
 
 if __name__ == "__main__":
