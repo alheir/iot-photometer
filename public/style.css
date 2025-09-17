@@ -264,6 +264,21 @@ body.dark .debug-content { background: #111; color: #66ffa6; }
     font-size: 0.85rem;
 }
 
+.repo-footer {
+    text-align: center;
+    margin-top: 18px;
+    font-size: 0.9rem;
+    color: #7f8c8d;
+}
+.repo-footer a {
+    color: #3498db;
+    text-decoration: none;
+    font-weight: 600;
+}
+.repo-footer a:hover {
+    text-decoration: underline;
+}
+
 @media (max-width: 768px) {
     body {
         padding: 10px;
