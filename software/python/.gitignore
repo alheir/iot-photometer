@@ -1,0 +1,37 @@
+# Minimal Python .gitignore
+
+# Bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments and env files
+.venv/
+venv/
+env/
+ENV/
+.env
+.env.*
+
+# Packaging / distribution
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Tests / coverage
+.pytest_cache/
+.coverage*
+htmlcov/
+.cache
+
+# Notebooks
+.ipynb_checkpoints
+
+# Static analysis caches (optional)
+.mypy_cache/
+.ruff_cache/
+
+# OS/editor
+Thumbs.db
+.DS_Store
