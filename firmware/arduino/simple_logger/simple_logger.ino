@@ -6,9 +6,36 @@
 #include "secrets.h"  // Include the secrets file
 #include <time.h>  // Agrega para NTP
 
-// Check if secrets.h is included and defined
-#ifndef SECRETS_H
-#error "secrets.h not found or not properly defined. Please create it with your sensitive data."
+// Try to include secrets.h if present (current dir or project's simple_logger)
+#if defined(__has_include)
+  #if __has_include("secrets.h")
+    #include "secrets.h"
+  #else
+    #warning "secrets.h not found. Define WIFI_SSID,WIFI_PASSWORD,SERVER_URL_LUX (and optional DEVICE_ALIAS) before compiling."
+  #endif
+#else
+  // Compiler doesn't support __has_include; try generic include and let the preprocessor handle missing file
+  #include "secrets.h"
+#endif
+
+// #define WIFI_SSID
+// #define WIFI_PASSWORD
+// #define SERVER_URL_LUX
+// #define DEVICE_ALIAS  // Optional
+
+// Ensure required secrets are present at compile time
+#ifndef WIFI_SSID
+  #error "WIFI_SSID is not defined."
+#endif
+#ifndef WIFI_PASSWORD
+  #error "WIFI_PASSWORD is not defined."
+#endif
+#ifndef SERVER_URL_LUX
+//   #error "SERVER_URL_LUX is not defined."
+  #define SERVER_URL_LUX "https://iot-photometer-default-rtdb.firebaseio.com/luminance.json"
+#endif
+#ifndef DEVICE_ALIAS
+  #warning "DEVICE_ALIAS is not defined. Using ESP-<chipId> as default alias."
 #endif
 
 WiFiClientSecure client;
