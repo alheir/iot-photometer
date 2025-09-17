@@ -3,21 +3,61 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IoT Photometer - Real-Time Luminance</title>
+    <title>IoT Photometer Dashboard</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <h1>IoT Photometer - Real-Time Luminance</h1>
-    <p>Current Lux: <span id="luxValue">Loading...</span></p>
-    <p>Last Updated: <span id="timestamp">N/A</span></p>
-    <h2>ESP8266 Logs</h2>
-    <div id="logsContainer" style="max-height: 300px; overflow-y: auto; background: #eee; padding: 10px; text-align: left;">
-        <p>Loading logs...</p>
+    <div class="container">
+        <h1>IoT Photometer Dashboard</h1>
+        
+        <div class="current-stats">
+            <div class="stat-card">
+                <h3>Current Lux</h3>
+                <div class="stat-value" id="luxValue">Loading...</div>
+                <div class="stat-subtext" id="timestamp">N/A</div>
+            </div>
+            <div class="stat-card">
+                <h3>Active Devices</h3>
+                <div class="stat-value" id="deviceCount">0</div>
+                <div class="stat-subtext">Connected sensors</div>
+            </div>
+            <div class="stat-card">
+                <h3>Last Update</h3>
+                <div class="stat-value" id="lastUpdateTime">Never</div>
+                <div class="stat-subtext">Seconds ago</div>
+            </div>
+        </div>
+
+        <div class="controls">
+            <h2>Device Monitoring</h2>
+            <div class="control-group">
+                <label>Sort by:</label>
+                <select id="sortSelect">
+                    <option value="timestamp">Last Update</option>
+                    <option value="lux">Lux Value</option>
+                    <option value="mac">MAC Address</option>
+                </select>
+                <button id="refreshBtn">Refresh</button>
+            </div>
+        </div>
+
+        <div class="devices-grid" id="devicesContainer">
+            <div class="device-card">
+                <div class="device-header">
+                    <div class="device-mac">Loading devices...</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="debug-section">
+            <button class="debug-toggle" id="debugToggle">Show Debug Data</button>
+            <div class="debug-content" id="debugRaw"></div>
+        </div>
     </div>
+
     <script src="config.js"></script>
-    <!-- Use compat builds so firebase.initializeApp / firebase.database() work -->
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
-    <script src="script.js"></script>
+    <script src="script.js?v=4"></script>
 </body>
 </html>

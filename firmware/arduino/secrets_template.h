@@ -5,8 +5,10 @@
 #define WIFI_SSID "---"
 #define WIFI_PASSWORD "---"
 
-// Firebase server URLs
+// Firebase server URL
 #define SERVER_URL_LUX "---"
-#define SERVER_URL_LOGS "---"
+
+// Optional device alias (uncomment and set to override default ESP-<chipId> alias)
+// #define DEVICE_ALIAS 
 
 #endif // SECRETS_TEMPLATE_H

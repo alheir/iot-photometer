@@ -15,33 +15,6 @@ WiFiClientSecure client;
 
 /**************************************************************************/
 /*
-    Sends a log message to Firebase
-*/
-/**************************************************************************/
-void sendLogToFirebase(String message) {
-  if (WiFi.status() == WL_CONNECTED) {
-    client.setInsecure();
-    HTTPClient http;
-    http.begin(client, SERVER_URL_LOGS);
-    http.addHeader("Content-Type", "application/json");
-    // Use POST to push new log entries
-    time_t now = time(nullptr);
-    String payload = "{\"message\": \"" + message + "\", \"timestamp\": " + String(now * 1000) + "}";
-    int httpResponseCode = http.POST(payload);
-    Serial.println("HTTP Response Code: " + String(httpResponseCode));
-    if (httpResponseCode == 200) {
-      Serial.println("Log sent to Firebase: " + message);
-    } else {
-      Serial.println("Error sending log: " + String(httpResponseCode));
-    }
-    http.end();
-  } else {
-    Serial.println("WiFi not connected, cannot send log");
-  }
-}
-
-/**************************************************************************/
-/*
     Sends a luminance value to Firebase
 */
 /**************************************************************************/
@@ -49,20 +22,51 @@ void sendLuminanceToFirebase(float lux) {
   if (WiFi.status() == WL_CONNECTED) {
     client.setInsecure();
     HTTPClient http;
-    http.begin(client, SERVER_URL_LUX);  // https://.../luminance.json
+
+    // Get MAC and sanitize for use as Firebase key (remove colons)
+    String mac = WiFi.macAddress();
+    mac.replace(":", "");
+
+    // Alias: from secrets if provided, else default to ESP-<chipId>
+    String alias =
+    #ifdef DEVICE_ALIAS
+      String(DEVICE_ALIAS);
+    #else
+      String("ESP-") + String(ESP.getChipId(), HEX);
+    #endif
+    // very simple escape for quotes
+    alias.replace("\"", "\\\"");
+
+    // Build per-device endpoint: if SERVER_URL_LUX contains ".json", replace with "/<mac>.json"
+    String url = String(SERVER_URL_LUX);
+    int idx = url.indexOf(".json");
+    if (idx != -1) {
+      url = url.substring(0, idx) + "/" + mac + ".json";
+    } else {
+      if (url.endsWith("/")) url += mac + ".json"; else url += "/" + mac + ".json";
+    }
+
+    http.begin(client, url);  // https://.../luminance/<mac>.json
     http.addHeader("Content-Type", "application/json");
 
+    // Use seconds to avoid overflow; webapp normalizes to ms
     time_t now = time(nullptr);
-    String payload = "{\"lux\": " + String(lux, 2) + ", \"timestamp\": " + String((unsigned long)now * 1000) + "}";
+    String payload = "{"
+      "\"mac\":\"" + mac + "\","
+      "\"alias\":\"" + alias + "\","
+      "\"lux\":" + String(lux, 2) + ","
+      "\"timestamp\":" + String((unsigned long)now) +
+    "}";
+
     int code = http.PUT(payload);
     Serial.printf("Luminance PUT -> code: %d, payload: %s\n", code, payload.c_str());
-    
+
     if (code != 200) {
       Serial.printf("Error sending luminance data. Response: %d\n", code);
       String response = http.getString();
       Serial.println("Response body: " + response);
     }
-    
+
     http.end();
   } else {
     Serial.println("WiFi not connected, cannot send luminance");
@@ -100,10 +104,7 @@ void setup(void) {
   // Semilla para random (tras WiFi/NTP ya hay más entropía)
   randomSeed(micros());
 
-  // Ahora envía logs con timestamp correcto
-  sendLogToFirebase("Connected to WiFi. IP: " + WiFi.localIP().toString());
   Serial.println("Simple Logger started!");
-  sendLogToFirebase("Simple Logger started!");
 }
 
 /**************************************************************************/
@@ -118,13 +119,6 @@ void loop(void) {
   
   // Add some debug output
   Serial.printf("Sent lux value: %.2f\n", lux);
-
-  // Send log less frequently to avoid spam
-  static unsigned long lastLogTime = 0;
-  if (millis() - lastLogTime > 10000) {  // Every 10 seconds
-    sendLogToFirebase("Lux measurement: " + String(lux, 2));
-    lastLogTime = millis();
-  }
 
   delay(2000);  // Send every 2 seconds
 }
