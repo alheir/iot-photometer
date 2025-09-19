@@ -42,11 +42,12 @@
 Adafruit_TSL2591 tsl = Adafruit_TSL2591 (2591);
 WiFiClientSecure client;
 
-// NEW globals for geo and one-time send flag
+// NEW globals for geo and one-time send flags
 String geo_country = "";
 String geo_region = "";
 String geo_city = "";
-bool geoSent = false; // only send geo+alias once at startup
+bool geoSent = false;           // only send geo child once
+bool initialInfoSent = false;   // only send alias+mac once at top-level
 
 // --- NEW: geolocation helpers ----------------------------------------------
 String httpPostJSON(const String &url, const String &body) {
@@ -135,6 +136,74 @@ void geolocateByIP() {
   }
 }
 
+// NEW: send alias + mac once at top-level /<mac>.json (use PATCH to avoid overwriting)
+void sendInitialDeviceInfo() {
+  if (initialInfoSent) {
+    Serial.println("Initial device info already sent; skipping.");
+    return;
+  }
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi not connected, skip initial info send");
+    return;
+  }
+
+  client.setInsecure();
+  HTTPClient http;
+
+  String mac = WiFi.macAddress();
+  mac.replace(":", "");
+
+  // Build per-device endpoint (top-level JSON)
+  String base = String(SERVER_URL_LUX);
+  int idx = base.indexOf(".json");
+  if (idx != -1) base = base.substring(0, idx);
+  if (!base.endsWith("/")) base += "/";
+  String url = base + mac + ".json";
+
+  http.begin(client, url);
+  http.addHeader("Content-Type", "application/json");
+
+  time_t now = time(nullptr);
+  unsigned long ts = (now > 1000000000UL) ? (unsigned long)now : 0UL;
+
+  String alias =
+#ifdef DEVICE_ALIAS
+    String(DEVICE_ALIAS);
+#else
+    String("ESP-") + String(ESP.getChipId(), HEX);
+#endif
+  alias.replace("\"", "\\\"");
+
+  String payload = "{";
+  payload += "\"alias\":\"" + alias + "\",";
+  payload += "\"mac\":\"" + mac + "\",";
+  payload += "\"timestamp\":" + String(ts);
+  payload += "}";
+
+  int code = -1;
+  #if defined(ESP8266)
+    code = http.sendRequest("PATCH", payload);
+  #elif defined(ESP32)
+    code = http.PATCH(payload);
+  #else
+    code = http.sendRequest("PATCH", payload);
+  #endif
+
+  if (code <= 0) {
+    Serial.println("PATCH for initial info failed; falling back to PUT");
+    code = http.PUT(payload);
+  }
+
+  Serial.printf("Initial info PATCH/PUT %s -> code: %d, payload: %s\n", url.c_str(), code, payload.c_str());
+  if (code != 200 && code != 201) {
+    String resp = http.getString();
+    Serial.println("Initial info response: " + resp);
+  }
+  http.end();
+
+  initialInfoSent = true;
+}
+
 // send only country/region/city + alias once under per-device path <mac>/geo.json
 void sendGeoInfoToWebApp() {
   if (geoSent) {
@@ -169,16 +238,8 @@ void sendGeoInfoToWebApp() {
   time_t now = time(nullptr);
   unsigned long ts = (now > 1000000000UL) ? (unsigned long)now : 0UL;
 
-  String alias =
-#ifdef DEVICE_ALIAS
-    String(DEVICE_ALIAS);
-#else
-    String("ESP-") + String(ESP.getChipId(), HEX);
-#endif
-  alias.replace("\"", "\\\"");
-
+  // payload: only geo fields (no alias/mac)
   String payload = "{";
-  payload += "\"alias\":\"" + alias + "\",";
   payload += "\"country\":\"" + geo_country + "\",";
   payload += "\"region\":\"" + geo_region + "\",";
   payload += "\"city\":\"" + geo_city + "\",";
@@ -298,12 +359,15 @@ void setup (void) {
     while (time (nullptr) < 1000000000) { delay (500); Serial.print ("."); }
     Serial.println (" synced");
 
+    // perform IP-based geolocation at startup to populate geo_* vars
+    geolocateByIP();
+
+    // send alias+mac once at top-level, then send geo child
+    sendInitialDeviceInfo();
+    sendGeoInfoToWebApp();
+
     // Initial send with -1.0 to mark device online without valid lux
     sendLuminanceToWebApp (-1.0);
-
-    // perform IP-based geolocation at startup, then send geo+alias once
-    geolocateByIP();
-    sendGeoInfoToWebApp();
 
     // Sensor init
     Wire.begin ();

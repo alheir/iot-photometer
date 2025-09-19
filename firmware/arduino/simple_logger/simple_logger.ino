@@ -40,11 +40,12 @@
 
 WiFiClientSecure client;
 
-// --- NEW: geo globals & one-time flag ---
+// --- NEW: geo globals & one-time flags (already present geoSent) ---
 String geo_country = "";
 String geo_region = "";
 String geo_city = "";
 bool geoSent = false;
+bool initialInfoSent = false;
 
 /**************************************************************************/
 /*
@@ -139,8 +140,9 @@ void setup(void) {
   // Semilla para random (tras WiFi/NTP ya hay más entropía)
   randomSeed(micros());
 
-  // perform IP-based geolocation and send geo+alias once
+  // perform IP-based geolocation and send initial info + geo once
   geolocateByIP();
+  sendInitialDeviceInfoToFirebase();
   sendGeoInfoToFirebaseOnce();
 
   Serial.println("Simple Logger started!");
@@ -213,7 +215,75 @@ void geolocateByIP() {
   }
 }
 
-// NEW: send alias + country/region/city once at startup to /<mac>/geo.json (no "mac" in payload)
+// NEW: send alias + mac once at top-level /<mac>.json (PATCH)
+void sendInitialDeviceInfoToFirebase() {
+  if (initialInfoSent) {
+    Serial.println("Initial device info already sent; skipping.");
+    return;
+  }
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi not connected, skip initial info send");
+    return;
+  }
+
+  client.setInsecure();
+  HTTPClient http;
+
+  String mac = WiFi.macAddress();
+  mac.replace(":", "");
+
+  // Build per-device endpoint
+  String url = String(SERVER_URL_LUX);
+  int idx = url.indexOf(".json");
+  if (idx != -1) url = url.substring(0, idx);
+  if (!url.endsWith("/")) url += "/";
+  url += mac + ".json";
+
+  http.begin(client, url);
+  http.addHeader("Content-Type", "application/json");
+
+  time_t now = time(nullptr);
+  unsigned long ts = (now > 1000000000UL) ? (unsigned long)now : 0UL;
+
+  String alias =
+  #ifdef DEVICE_ALIAS
+    String(DEVICE_ALIAS);
+  #else
+    String("ESP-") + String(ESP.getChipId(), HEX);
+  #endif
+  alias.replace("\"", "\\\"");
+
+  String payload = "{";
+  payload += "\"alias\":\"" + alias + "\",";
+  payload += "\"mac\":\"" + mac + "\",";
+  payload += "\"timestamp\":" + String(ts);
+  payload += "}";
+
+  int code = -1;
+  #if defined(ESP8266)
+    code = http.sendRequest("PATCH", payload);
+  #elif defined(ESP32)
+    code = http.PATCH(payload);
+  #else
+    code = http.sendRequest("PATCH", payload);
+  #endif
+
+  if (code <= 0) {
+    Serial.println("PATCH for initial info failed; falling back to PUT");
+    code = http.PUT(payload);
+  }
+
+  Serial.printf("Initial info PATCH/PUT %s -> code: %d, payload: %s\n", url.c_str(), code, payload.c_str());
+  if (code != 200 && code != 201) {
+    String resp = http.getString();
+    Serial.println("Initial info response: " + resp);
+  }
+  http.end();
+
+  initialInfoSent = true;
+}
+
+// Modify sendGeoInfoToFirebaseOnce() to NOT include alias/mac (only geo fields) - only patch shown
 void sendGeoInfoToFirebaseOnce() {
   if (geoSent) {
     Serial.println("Geo already sent; skipping.");
@@ -234,7 +304,6 @@ void sendGeoInfoToFirebaseOnce() {
   String mac = WiFi.macAddress();
   mac.replace(":", "");
 
-  // Build per-device geo endpoint
   String url = String(SERVER_URL_LUX);
   int idx = url.indexOf(".json");
   if (idx != -1) url = url.substring(0, idx);
@@ -247,16 +316,7 @@ void sendGeoInfoToFirebaseOnce() {
   time_t now = time(nullptr);
   unsigned long ts = (now > 1000000000UL) ? (unsigned long)now : 0UL;
 
-  String alias =
-  #ifdef DEVICE_ALIAS
-    String(DEVICE_ALIAS);
-  #else
-    String("ESP-") + String(ESP.getChipId(), HEX);
-  #endif
-  alias.replace("\"", "\\\"");
-
   String payload = "{";
-  payload += "\"alias\":\"" + alias + "\",";
   payload += "\"country\":\"" + geo_country + "\",";
   payload += "\"region\":\"" + geo_region + "\",";
   payload += "\"city\":\"" + geo_city + "\",";
