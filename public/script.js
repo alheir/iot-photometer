@@ -95,6 +95,19 @@ try {
             const timeAgo = getTimeAgo(timestamp);
             if (status !== 'offline') activeCount++;
 
+            // Build location HTML if available
+            let locationHtml = '';
+            if (device.geo) {
+                const parts = [];
+                if (device.geo.country) parts.push(escapeHtml(device.geo.country));
+                if (device.geo.region) parts.push(escapeHtml(device.geo.region));
+                if (device.geo.city) parts.push(escapeHtml(device.geo.city));
+                if (parts.length) {
+                    locationHtml = `<div class="device-location">${parts.join(' / ')}</div>`;
+                }
+                // If lat/lng are later added, UI can display map link; currently we avoid showing coordinates.
+            }
+
             const card = document.createElement('div');
             card.className = 'device-card';
             card.innerHTML = `
@@ -104,6 +117,7 @@ try {
                 </div>
                 <div class="device-lux">${isNaN(lux) ? 'N/A' : lux.toFixed(2)}</div>
                 <div class="device-timestamp">${new Date(toMillis(timestamp)).toLocaleString()}</div>
+                ${locationHtml}
                 <div class="device-trend">
                     <span>Status: ${status}</span>
                     <span>${timeAgo}</span>
@@ -133,13 +147,22 @@ try {
         if (devices.length === 0) {
             document.getElementById('luxValue').textContent = 'No data';
             document.getElementById('timestamp').textContent = 'N/A';
+            // Last Update shows relative time; no data => empty
             document.getElementById('lastUpdateTime').textContent = 'Never';
+            const labelEl = document.getElementById('lastUpdateLabel');
+            if (labelEl) labelEl.textContent = '';
             return;
         }
         const latest = devices.reduce((latest, device) => (toMillis(device.timestamp) > toMillis(latest.timestamp) ? device : latest));
         document.getElementById('luxValue').textContent = Number(latest.lux).toFixed(2);
+        // exact timestamp shown under Current Lux
         document.getElementById('timestamp').textContent = new Date(toMillis(latest.timestamp)).toLocaleString();
-        document.getElementById('lastUpdateTime').textContent = getTimeAgo(latest.timestamp);
+        // Last Update: show relative elapsed time since latest.timestamp
+        const lastTimeEl = document.getElementById('lastUpdateTime');
+        if (lastTimeEl) lastTimeEl.textContent = getTimeAgo(latest.timestamp);
+        // clear auxiliary label
+        const labelEl = document.getElementById('lastUpdateLabel');
+        if (labelEl) labelEl.textContent = '';
     }
 
     // Data subscription
@@ -159,17 +182,34 @@ try {
             snapshot.forEach(child => {
                 const key = child.key;
                 const v = child.val();
-                if (v && typeof v === 'object' && v.lux !== undefined) {
-                    const lux = Number(v.lux);
-                    const tsMs = toMillis(v.timestamp);
-                    // Normalizar alias si existe
+
+                // ...existing check: accept object nodes even if lux is missing (we still want geo)...
+                if (v && typeof v === 'object') {
+                    const lux = (v.lux !== undefined) ? Number(v.lux) : NaN;
+                    const tsMs = v.timestamp !== undefined ? toMillis(v.timestamp) : Date.now();
                     const alias = (typeof v.alias === 'string' && v.alias.trim()) ? v.alias.trim() : undefined;
-                    devicesData[key] = { ...v, lux, alias, timestamp: v.timestamp };
+
+                    // Explicitly read geo child if present
+                    let geo = undefined;
+                    if (child.hasChild && child.hasChild('geo')) {
+                        const gv = child.child('geo').val();
+                        if (gv && typeof gv === 'object') geo = gv;
+                    } else if (v.geo && typeof v.geo === 'object') {
+                        // fallback: geo already inside v
+                        geo = v.geo;
+                    }
+
+                    // Build device entry including geo (if any)
+                    devicesData[key] = { ...v, lux, alias, timestamp: v.timestamp, geo };
+
                     const mac = v.mac || key;
                     if (!devicesHistory[mac]) devicesHistory[mac] = [];
-                    devicesHistory[mac].push({ t: tsMs, lux });
-                    if (devicesHistory[mac].length > MAX_POINTS) {
-                        devicesHistory[mac].splice(0, devicesHistory[mac].length - MAX_POINTS);
+                    // only push valid numeric lux into history
+                    if (!isNaN(lux)) {
+                        devicesHistory[mac].push({ t: tsMs, lux });
+                        if (devicesHistory[mac].length > MAX_POINTS) {
+                            devicesHistory[mac].splice(0, devicesHistory[mac].length - MAX_POINTS);
+                        }
                     }
                 }
             });

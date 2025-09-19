@@ -42,6 +42,160 @@
 Adafruit_TSL2591 tsl = Adafruit_TSL2591 (2591);
 WiFiClientSecure client;
 
+// NEW globals for geo and one-time send flag
+String geo_country = "";
+String geo_region = "";
+String geo_city = "";
+bool geoSent = false; // only send geo+alias once at startup
+
+// --- NEW: geolocation helpers ----------------------------------------------
+String httpPostJSON(const String &url, const String &body) {
+  HTTPClient http;
+  client.setInsecure();
+  http.begin(client, url);
+  http.addHeader("Content-Type", "application/json");
+  int code = http.POST(body);
+  Serial.printf("POST %s -> %d\n", url.c_str(), code);
+  String resp = http.getString();
+  Serial.println("Response body: " + resp);
+  http.end();
+  return resp;
+}
+
+String httpGet(const String &url) {
+  HTTPClient http;
+  client.setInsecure();
+  http.begin(client, url);
+  int code = http.GET();
+  Serial.printf("GET %s -> %d\n", url.c_str(), code);
+  String resp = http.getString();
+  Serial.println("Response body: " + resp);
+  http.end();
+  return resp;
+}
+
+// Helper: extract a floating number after a key like "\"lat\"" or "\"longitude\""
+bool extractNumberAfterKey(const String &json, const char *key, float &out) {
+  int k = json.indexOf(key);
+  if (k < 0) return false;
+  int colon = json.indexOf(':', k);
+  if (colon < 0) return false;
+  int i = colon + 1;
+  while (i < json.length() && isSpace(json[i])) i++;
+  int start = i;
+  bool seen = false;
+  while (i < json.length()) {
+    char c = json[i];
+    if ((c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.' || c == 'e' || c == 'E') {
+      seen = true; i++;
+    } else break;
+  }
+  if (!seen) return false;
+  String numStr = json.substring(start, i);
+  out = numStr.toFloat();
+  return true;
+}
+
+// Helper: extract a quoted string after a key like "\"country_name\"" or "\"city\""
+bool extractStringAfterKey(const String &json, const char *key, String &out) {
+  int k = json.indexOf(key);
+  if (k < 0) return false;
+  int colon = json.indexOf(':', k);
+  if (colon < 0) return false;
+  int q1 = json.indexOf('\"', colon);
+  if (q1 < 0) return false;
+  int q2 = json.indexOf('\"', q1 + 1);
+  if (q2 < 0) return false;
+  out = json.substring(q1 + 1, q2);
+  return true;
+}
+
+// Geolocate by IP using ipapi.co (prints and stores parsed JSON fields)
+void geolocateByIP() {
+  Serial.println("Starting IP-based geolocation (ipapi.co)...");
+  String url = "https://ipapi.co/json/";
+  String resp = httpGet(url); // httpGet already prints response
+
+  // parse strings: country_name, region, city (ipapi uses "country_name","region","city")
+  String s;
+  geo_country = "";
+  geo_region = "";
+  geo_city = "";
+  if (extractStringAfterKey(resp, "\"country_name\"", s) || extractStringAfterKey(resp, "country_name", s)) {
+    geo_country = s;
+    Serial.println("Country: " + geo_country);
+  }
+  if (extractStringAfterKey(resp, "\"region\"", s) || extractStringAfterKey(resp, "region", s)) {
+    geo_region = s;
+    Serial.println("Region: " + geo_region);
+  }
+  if (extractStringAfterKey(resp, "\"city\"", s) || extractStringAfterKey(resp, "city", s)) {
+    geo_city = s;
+    Serial.println("City: " + geo_city);
+  }
+}
+
+// send only country/region/city + alias once under per-device path <mac>/geo.json
+void sendGeoInfoToWebApp() {
+  if (geoSent) {
+    Serial.println("Geo already sent; skipping.");
+    return;
+  }
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi not connected, skip geo send");
+    return;
+  }
+  if (geo_country.length()==0 && geo_region.length()==0 && geo_city.length()==0) {
+    Serial.println("No geo info to send");
+    return;
+  }
+
+  client.setInsecure();
+  HTTPClient http;
+
+  String mac = WiFi.macAddress();
+  mac.replace(":", "");
+
+  // Build per-device geo endpoint (same as before)
+  String base = String(SERVER_URL_LUX);
+  int idx = base.indexOf(".json");
+  if (idx != -1) base = base.substring(0, idx);
+  if (!base.endsWith("/")) base += "/";
+  String url = base + mac + "/geo.json";
+
+  http.begin(client, url);
+  http.addHeader("Content-Type", "application/json");
+
+  time_t now = time(nullptr);
+  unsigned long ts = (now > 1000000000UL) ? (unsigned long)now : 0UL;
+
+  String alias =
+#ifdef DEVICE_ALIAS
+    String(DEVICE_ALIAS);
+#else
+    String("ESP-") + String(ESP.getChipId(), HEX);
+#endif
+  alias.replace("\"", "\\\"");
+
+  String payload = "{";
+  payload += "\"alias\":\"" + alias + "\",";
+  payload += "\"country\":\"" + geo_country + "\",";
+  payload += "\"region\":\"" + geo_region + "\",";
+  payload += "\"city\":\"" + geo_city + "\",";
+  payload += "\"timestamp\":" + String(ts);
+  payload += "}";
+
+  int code = http.PUT(payload);
+  Serial.printf("Geo PUT %s -> code: %d, payload: %s\n", url.c_str(), code, payload.c_str());
+  if (code != 200 && code != 201) {
+    String resp = http.getString();
+    Serial.println("Geo response: " + resp);
+  }
+  http.end();
+
+  geoSent = true;
+}
+
 // Minimal sensor info display
 void displaySensorDetails (void) {
     sensor_t sensor;
@@ -59,28 +213,20 @@ void configureSensor (void) {
     Serial.println ("Sensor configured: 25x gain, 300ms");
 }
 
-// Send luminance to webapp (Firebase-like endpoint)
+// Send luminance to webapp
 void sendLuminanceToWebApp (float lux) {
     if (WiFi.status () != WL_CONNECTED) {
         Serial.println ("WiFi not connected, skip send");
         return;
     }
 
-    client.setInsecure (); // for self-signed / no CA scenarios
+    client.setInsecure ();
     HTTPClient http;
 
     String mac = WiFi.macAddress ();
     mac.replace (":", "");
 
-    String alias =
-#ifdef DEVICE_ALIAS
-        String (DEVICE_ALIAS);
-#else
-        String ("ESP-") + String (ESP.getChipId (), HEX);
-#endif
-    alias.replace ("\"", "\\\"");
-
-    // Build per-device endpoint
+    // Build per-device endpoint (same path), but payload will NOT contain mac/alias
     String url = String (SERVER_URL_LUX);
     int idx = url.indexOf (".json");
     if (idx != -1) {
@@ -94,15 +240,33 @@ void sendLuminanceToWebApp (float lux) {
     http.addHeader ("Content-Type", "application/json");
 
     time_t now = time (nullptr);
+    unsigned long ts = (now > 1000000000UL) ? (unsigned long)now : 0UL;
+
     String payload = "{";
-    payload += "\"mac\":\"" + mac + "\",";
-    payload += "\"alias\":\"" + alias + "\",";
     payload += "\"lux\":" + String (lux, 2) + ",";
-    payload += "\"timestamp\":" + String ((unsigned long)now);
+    payload += "\"timestamp\":" + String (ts);
     payload += "}";
 
-    int code = http.PUT (payload);
-    Serial.printf ("PUT %s -> code: %d, payload: %s\n", url.c_str (), code, payload.c_str ());
+    // Use PATCH to update only these fields (preserve children like "geo").
+    int code = -1;
+    #if defined(ESP8266)
+      // sendRequest exists on ESP8266 HTTPClient
+      code = http.sendRequest("PATCH", payload);
+    #elif defined(ESP32)
+      // ESP32 HTTPClient has PATCH method
+      code = http.PATCH(payload);
+    #else
+      // generic try
+      code = http.sendRequest("PATCH", payload);
+    #endif
+
+    // Fallback: if PATCH failed or unsupported, try PUT (compat fallback)
+    if (code <= 0) {
+        Serial.println("PATCH failed or unsupported; falling back to PUT");
+        code = http.PUT(payload);
+    }
+
+    Serial.printf ("PATCH/PUT %s -> code: %d, payload: %s\n", url.c_str (), code, payload.c_str ());
 
     if (code != 200 && code != 201) {
         String resp = http.getString ();
@@ -136,6 +300,10 @@ void setup (void) {
 
     // Initial send with -1.0 to mark device online without valid lux
     sendLuminanceToWebApp (-1.0);
+
+    // perform IP-based geolocation at startup, then send geo+alias once
+    geolocateByIP();
+    sendGeoInfoToWebApp();
 
     // Sensor init
     Wire.begin ();

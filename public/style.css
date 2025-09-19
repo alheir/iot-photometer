@@ -197,6 +197,13 @@ button:hover {
     display: block;
 }
 
+.device-location {
+    text-align: center;
+    color: #95a5a6;
+    font-size: 0.85rem;
+    margin-bottom: 8px;
+}
+
 .debug-section {
     margin-top: 40px;
     padding-top: 20px;
