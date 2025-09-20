@@ -142,7 +142,8 @@ def run_test(Nmeas: int, port: str = None, fullscreen: bool = False):
 	plt.title("Curva de Gamma")
 	plt.text(0.2, 0.6, f"Gamma = {gamma:.2f}\nOffset = {offset:.3g}", color="red", fontsize=12, fontweight="bold")
 	plt.legend()
-	plt.show()
+	plt.show(block=False)
+	input("Presione Enter para cerrar...")
 
 def main():
 	parser = argparse.ArgumentParser(
