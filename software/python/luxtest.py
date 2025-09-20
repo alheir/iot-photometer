@@ -94,9 +94,22 @@ def run_test(Nmeas: int, port: str = None, fullscreen: bool = False):
 
 		# Medir N veces y promediar
 		vals = []
-		for _ in range(Nmeas):
-			vals.append(luxmeter(port=port))
-		avg = float(np.mean(vals))
+		for j in range(Nmeas):
+			try:
+				val = luxmeter(port=port)
+			except Exception as e:
+				# No detener todo el test por una lectura fallida; registrar NaN
+				print(f"    Measurement {j+1}/{Nmeas}: ERROR: {e}")
+				val = float("nan")
+			else:
+				print(f"    Measurement {j+1}/{Nmeas}: {val:.3f} lx")
+			vals.append(val)
+		# Mostrar parciales en una sola línea (formateados)
+		parts = ", ".join((f"{v:.3f}" if np.isfinite(v) else "nan") for v in vals)
+		print(f"  Level {level:.2f}: partials = [{parts}]")
+		# Promedio ignorando NaNs
+		avg = float(np.nanmean(vals))
+		print(f"  Level {level:.2f}: average = {avg:.3f} lx")
 		luxmed.append(avg)
 
 		perc = int(i * 100 / total)
@@ -112,6 +125,7 @@ def run_test(Nmeas: int, port: str = None, fullscreen: bool = False):
 
 	# Ajuste de potencia: y = a * x^b [+ d] ; Gamma = b
 	a, gamma, offset = fit_power_law(input_levels, lux_norm)
+	print(f"Gamma estimado: {gamma:.3f}")
 
 	# Graficar datos y ajuste
 	plt.figure()
