@@ -1,3 +1,6 @@
+import matplotlib
+matplotlib.use("TkAgg")  # Use TkAgg backend for better window control
+
 import numpy as np
 import matplotlib.pyplot as plt
 import tkinter as tk  # Added for screen dimensions
